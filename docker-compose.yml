@@ -33,25 +33,22 @@ services:
         networks:
             - fintrace-net
 
-    # ── Redis Commander (Giao diện Web) ────────────────────────────────────────
-    redis-commander:
-        image: rediscommander/redis-commander:latest
-        platform: linux/arm64/v8
+    # ── Redis insight (Giao diện Web) ────────────────────────────────────────
+    redis-insight:
+        image: redis/redisinsight:latest
         container_name: fintrace-redis-ui
         restart: unless-stopped
-        environment:
-            # Kết nối tới service redis bên trên
-            - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD:-}
-            # Bạn có thể đặt user/pass để vào trang web này cho bảo mật
-            - HTTP_USER=admin
-            - HTTP_PASSWORD=fintrace_secret
         ports:
-            - "8081:8081"
-        depends_on:
-            redis:
-                condition: service_healthy
+            - "8081:5540" # Truy cập qua IP-CUA-EC2:8081
+        environment:
+            - RI_APP_PORT=5540
+        # Nếu bạn muốn Redis Insight tự động kết nối vào Redis khi vừa mở lên:
+        # (Tùy chọn, nếu không bạn vào giao diện bấm Add Database thủ công)
         networks:
             - fintrace-net
+        depends_on:
+        redis:
+            condition: service_healthy
 
     # ── Worker ─────────────────────────────────────────────────────────────────
     worker:
