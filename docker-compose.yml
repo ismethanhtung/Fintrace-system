@@ -39,16 +39,14 @@ services:
         container_name: fintrace-redis-ui
         restart: unless-stopped
         ports:
-            - "8081:5540" # Truy cập qua IP-CUA-EC2:8081
+            - "8081:5540"
         environment:
             - RI_APP_PORT=5540
-        # Nếu bạn muốn Redis Insight tự động kết nối vào Redis khi vừa mở lên:
-        # (Tùy chọn, nếu không bạn vào giao diện bấm Add Database thủ công)
         networks:
             - fintrace-net
         depends_on:
-        redis:
-            condition: service_healthy
+            redis: # Thụt lề vào trong depends_on
+                condition: service_healthy
 
     # ── Worker ─────────────────────────────────────────────────────────────────
     worker:
