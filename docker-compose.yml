@@ -1,0 +1,64 @@
+version: "3.9"
+
+# ─── Fintrace System ──────────────────────────────────────────────────────────
+# Hệ thống gồm 2 service:
+#   redis   — Lưu trữ dữ liệu market (snapshot, realtime tick, market index, ...)
+#   worker  — Go service kết nối WebSocket + polling API → ghi vào Redis
+#
+# Next.js app (fintrace) đọc dữ liệu từ Redis qua các API route mới.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: fintrace-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass "${REDIS_PASSWORD:-}"
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fintrace-net
+
+  # ── Worker ─────────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: fintrace-worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Override REDIS_ADDR để worker dùng hostname service trong Docker network
+      REDIS_ADDR: redis:6379
+    networks:
+      - fintrace-net
+    # Worker không expose port ra ngoài (chỉ ghi Redis)
+
+# ── Volumes ────────────────────────────────────────────────────────────────────
+volumes:
+  redis_data:
+    driver: local
+
+# ── Networks ───────────────────────────────────────────────────────────────────
+networks:
+  fintrace-net:
+    driver: bridge
