@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
@@ -23,6 +25,9 @@ const (
 	// Timeout đọc message từ WebSocket
 	readTimeoutSec = 300
 )
+
+// Số log mẫu tối đa khi DNSE_DEBUG=1 và payload không map được vào tick/index.
+var dnseUnhandledLogged atomic.Uint32
 
 // channelNeedsSymbols trả về true nếu channel cần danh sách symbols khi subscribe.
 // market_index channels không cần symbols.
@@ -227,7 +232,13 @@ func readLoop(
 		default:
 			// Data message — lưu vào Redis
 			if isAuthed {
-				handleDataMessage(ctx, rdb, msg)
+				handled := handleDataMessage(ctx, rdb, msg)
+				if !handled && cfg.DnseDebug {
+					if n := dnseUnhandledLogged.Add(1); n <= 5 {
+						log.Printf("[dnse] debug: JSON sau auth chưa map tick/index (mẫu %d/5): %s",
+							n, truncateString(string(rawMsg), 480))
+					}
+				}
 			}
 		}
 	}
@@ -259,36 +270,55 @@ func subscribeAll(conn *websocket.Conn, channels []string, tickSymbols []string)
 }
 
 // handleDataMessage xử lý message data từ DNSE và lưu vào Redis.
-func handleDataMessage(ctx context.Context, rdb *redis.Client, msg map[string]interface{}) {
-	// Thử parse market index (không có field symbol cụ thể, có field indexName)
-	if indexName, ok := extractString(msg, "indexName", "index_name", "index"); ok && indexName != "" {
+// Trả về true nếu đã nhận dạng được tick hoặc market index (có ghi Redis hoặc đã parse đúng loại).
+func handleDataMessage(ctx context.Context, rdb *redis.Client, msg map[string]interface{}) bool {
+	// Thử parse market index (DNSE có thể gửi indexName / IndexName / ...)
+	if indexName, ok := extractString(msg,
+		"indexName", "index_name", "IndexName", "INDEX_NAME", "index", "Index",
+	); ok && indexName != "" {
 		saveMarketIndex(ctx, rdb, indexName, msg)
-		return
+		return true
 	}
 
-	// Thử parse tick data (có field symbol hoặc s)
-	if symbol, ok := extractString(msg, "symbol", "s", "ticker"); ok && symbol != "" {
+	// Tick: symbol / Symbol / ticker ...
+	if symbol, ok := extractString(msg,
+		"symbol", "Symbol", "s", "ticker", "Ticker", "SYM",
+	); ok && symbol != "" {
 		saveTick(ctx, rdb, strings.ToUpper(symbol), msg)
-		return
+		return true
 	}
 
 	// Nested data: thử unwrap field "data" hoặc "d"
 	for _, key := range []string{"data", "d", "payload"} {
 		if nested, ok := msg[key]; ok {
 			if nestedMap, ok := nested.(map[string]interface{}); ok {
-				handleDataMessage(ctx, rdb, nestedMap)
-				return
+				return handleDataMessage(ctx, rdb, nestedMap)
 			}
 			if nestedArr, ok := nested.([]interface{}); ok {
+				any := false
 				for _, item := range nestedArr {
 					if itemMap, ok := item.(map[string]interface{}); ok {
-						handleDataMessage(ctx, rdb, itemMap)
+						if handleDataMessage(ctx, rdb, itemMap) {
+							any = true
+						}
 					}
 				}
-				return
+				if any {
+					return true
+				}
 			}
 		}
 	}
+	return false
+}
+
+// truncateString cắt chuỗi theo số rune (an toàn với UTF-8).
+func truncateString(s string, maxRunes int) string {
+	if maxRunes <= 0 || utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:maxRunes]) + "…"
 }
 
 // saveTick lưu dữ liệu tick của một symbol vào Redis.

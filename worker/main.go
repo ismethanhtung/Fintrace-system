@@ -39,8 +39,8 @@ func main() {
 	cfg := config.Load()
 
 	log.Printf("[main] redis addr=%s db=%d", cfg.RedisAddr, cfg.RedisDB)
-	log.Printf("[main] dnse boards=%v market_indexes=%v tick_symbols=%d",
-		cfg.DnseBoards, cfg.DnseMarketIndexes, len(cfg.DnseTickSymbols))
+	log.Printf("[main] dnse boards=%v market_indexes=%v tick_symbols=%d debug=%v",
+		cfg.DnseBoards, cfg.DnseMarketIndexes, len(cfg.DnseTickSymbols), cfg.DnseDebug)
 	log.Printf("[main] vietcap groups=%v", cfg.VietcapGroups)
 	log.Printf("[main] kb symbols=%v", cfg.KbSymbols)
 

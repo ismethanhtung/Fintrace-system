@@ -27,8 +27,11 @@ type Config struct {
 	DnseMarketIndexes []string
 
 	// Danh sách symbol ticker cụ thể muốn nhận tick realtime từ DNSE.
-	// Để trống = không subscribe tick per-symbol (chỉ subscribe market_index).
+	// Để trống = dùng DefaultStockSymbols (giống STOCK_SYMBOLS mặc định).
 	DnseTickSymbols []string
+
+	// DNSE_DEBUG=1: log vài mẫu payload JSON đã auth nhưng chưa map được vào tick/index.
+	DnseDebug bool
 
 	// Vietcap
 	// Các nhóm cổ phiếu cần lấy snapshot (VN30, HOSE, HNX, UPCOM, ...)
@@ -112,6 +115,12 @@ func Load() *Config {
 		tickSymbols = DefaultStockSymbols
 	}
 
+	// KB intraday: ưu tiên KB_SYMBOLS (theo .env.example). Nếu không set thì dùng STOCK_SYMBOLS / default.
+	kbSymbols := splitComma(getEnv("KB_SYMBOLS", ""))
+	if len(kbSymbols) == 0 {
+		kbSymbols = stockSymbols
+	}
+
 	return &Config{
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
@@ -124,10 +133,11 @@ func Load() *Config {
 		DnseBoards:        splitComma(getEnv("DNSE_BOARDS", "G1,G2,G3")),
 		DnseMarketIndexes: splitComma(getEnv("DNSE_MARKET_INDEXES", "VNINDEX,VN30,HNXIndex,HNX30,HNXUpcomIndex")),
 		DnseTickSymbols:   tickSymbols,
+		DnseDebug:         getEnvBool("DNSE_DEBUG", false),
 
 		VietcapGroups: splitComma(getEnv("VIETCAP_GROUPS", "")),
 
-		KbSymbols: stockSymbols,
+		KbSymbols: kbSymbols,
 
 		VietcapSnapshotIntervalSec:    getEnvInt("VIETCAP_SNAPSHOT_INTERVAL_SEC", 30),
 		VietcapMarketIndexIntervalSec: getEnvInt("VIETCAP_MARKET_INDEX_INTERVAL_SEC", 30),
@@ -140,6 +150,14 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(strings.ToLower(getEnv(key, "")))
+	if v == "" {
+		return fallback
+	}
+	return v == "1" || v == "true" || v == "yes"
 }
 
 func getEnvInt(key string, fallback int) int {
