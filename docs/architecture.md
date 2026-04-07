@@ -22,12 +22,12 @@
 │  │  - auth HMAC    │   │  │ @every 30s                 │  │    │
 │  │  - subscribe    │   │  │ vietcap_snapshot task      │  │    │
 │  │    channels     │   │  └─────────────┬──────────────┘  │    │
-│  │  - reconnect    │   │                │                  │    │
+│  │  - reconnect    │   │                │                 │    │
 │  │    on error     │   │  ┌────────────────────────────┐  │    │
 │  └────────┬────────┘   │  │ @every 30s                 │  │    │
-│           │            │  │ vietcap_market_index task   │  │    │
+│           │            │  │ vietcap_market_index task  │  │    │
 │           │            │  └─────────────┬──────────────┘  │    │
-│           │            │                │                  │    │
+│           │            │                │                 │    │
 │           │            │  ┌────────────────────────────┐  │    │
 │           │            │  │ @every 60s                 │  │    │
 │           │            │  │ kb_intraday task           │  │    │
@@ -79,6 +79,7 @@ Lifecycle:
 ```
 
 **Channels subscribe:**
+
 - `tick.G1.json`, `tick.G2.json`, `tick.G3.json` — tick data per symbol
 - `tick_extra.G{n}.json` — thêm trường high/low/totalVol
 - `top_price.G{n}.json` — 3 mức giá mua/bán tốt nhất
@@ -102,6 +103,7 @@ DNSE giới hạn 300 symbols mỗi connection. Nếu cần nhiều hơn, phải
 - TTL: 2 phút (đủ sống qua một vài lần poll miss)
 
 **Response format từ Vietcap:**
+
 ```json
 {
   "group": "VN30",
@@ -157,6 +159,7 @@ DNSE giới hạn 300 symbols mỗi connection. Nếu cần nhiều hơn, phải
 ```
 
 **Lưu ý:** Asynq và DNSE stream **cùng dùng Redis** nhưng dùng key namespace khác nhau:
+
 - Asynq dùng prefix `asynq:*` (internal)
 - Worker dùng prefix `board:*` (data)
 
@@ -165,11 +168,13 @@ DNSE giới hạn 300 symbols mỗi connection. Nếu cần nhiều hơn, phải
 **(Tính năng tương lai)**
 
 Để subscribe toàn bộ HOSE (~1600 symbols), cần:
+
 1. Chia danh sách symbol thành batches 300
 2. Tạo `n` WebSocket connections song song (mỗi connection = 1 goroutine)
 3. Merge kết quả vào cùng Redis namespace
 
 Flow:
+
 ```
 goroutine 1 → DNSE WebSocket → symbols[0:300]   → Redis
 goroutine 2 → DNSE WebSocket → symbols[300:600]  → Redis
@@ -177,6 +182,7 @@ goroutine n → DNSE WebSocket → symbols[(n-1)*300:] → Redis
 ```
 
 Để kích hoạt, cần:
+
 - Có danh sách đầy đủ symbols (lấy từ Vietcap snapshot hoặc DNSE catalog)
 - Cấu hình `DNSE_TICK_SYMBOLS` hoặc thêm auto-discovery từ Vietcap data
 
@@ -198,9 +204,9 @@ goroutine n → DNSE WebSocket → symbols[(n-1)*300:] → Redis
 
 ## Reliability
 
-| Tình huống | Xử lý |
-|---|---|
-| DNSE WebSocket drop | Tự reconnect với exponential backoff (2s → 4s → ... → 60s) |
-| Vietcap API lỗi | Asynq retry tự động; data cũ trong Redis vẫn được phục vụ |
-| Redis không khả dụng | Worker crash; data cũ không có; cần alert |
-| Worker restart | Warm-up fetch ngay lập tức; không đợi chu kỳ scheduler |
+| Tình huống           | Xử lý                                                      |
+| -------------------- | ---------------------------------------------------------- |
+| DNSE WebSocket drop  | Tự reconnect với exponential backoff (2s → 4s → ... → 60s) |
+| Vietcap API lỗi      | Asynq retry tự động; data cũ trong Redis vẫn được phục vụ  |
+| Redis không khả dụng | Worker crash; data cũ không có; cần alert                  |
+| Worker restart       | Warm-up fetch ngay lập tức; không đợi chu kỳ scheduler     |
